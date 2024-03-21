@@ -1,50 +1,80 @@
-import telegram
-from flask import Flask, request
+from typing import Final
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-from telebot.credentials import bot_token, URL
+from telebot.credentials import bot_token, bot_user_name
 
 global bot
 global TOKEN
-TOKEN = bot_token
-bot = telegram.Bot(token=TOKEN)
+TOKEN: Final = bot_token
+BOT_USERNAME: Final = bot_user_name
 
-# start the flask app
-app = Flask(__name__)
+# Commands
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text('Greetings! How can I assist?')
 
-@app.route('/{}'.format(TOKEN), methods=['POST'])
-def respond():
-   # retrieve the message in JSON and then transform it to Telegram object
-   update = telegram.Update.de_json(request.get_json(force=True), bot)
+async def hello_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text('Hello! See what I did there...')
 
-   chat_id = update.message.chat.id
-   msg_id = update.message.message_id
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text('You can type anything and I will respond, go ahead and type something...')
 
-   # Telegram understands UTF-8, so encode text for unicode compatibility
-   text = update.message.text.encode('utf-8').decode()
-   # for debugging purposes only
-   print("got text message :", text)
-   # the first time you chat with the bot AKA the welcoming message
-   if text == "/hello":
-       # print the welcoming message
-       bot_welcome = """
-       Welcome to my bot world
-       """
-       # send the welcoming message
-       bot.sendMessage(chat_id=chat_id, text=bot_welcome, reply_to_message_id=msg_id)
+# Handle Reponses
 
-   return 'ok'
+def handle_response(text: str) -> str:
+    processed: str = text.lower()
 
-@app.route('/set_webhook', methods=['GET', 'POST'])
-def set_webhook():
-   s = bot.setWebhook('{URL}{HOOK}'.format(URL=URL, HOOK=TOKEN))
-   if s:
-       return "webhook setup ok"
-   else:
-       return "webhook setup failed"
-@app.route('/')
-def index():
-   return '.'
+    if 'hello' in processed:
+        return 'Hey there!'
+    if 'good' in processed:
+        return 'Good day there!'
+    if 'name' in processed:
+        return 'Nice to meet you!'
+    return 'I do not understand'
 
+# handle Message
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message_type: str = update.message.chat.type
+    text: str = update.message.text
+    #debugging
+    print(f'User ({update.message.chat.id}) in {message_type}: "{text}"')
+
+    if message_type == 'group':
+        if BOT_USERNAME in text:
+            new_text: str = text.replace(BOT_USERNAME, '').strip()
+            response: str = handle_response(new_text)
+        else:
+            return
+    else:
+        response: str = handle_response(text)
+
+    print('Bot: ', response)
+    await update.message.reply_text(response)
+
+#log errors
+
+async def error(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print(f'Update {update} caused error {context.error}')
+
+
+#main
 
 if __name__ == '__main__':
-   app.run(threaded=True)
+    print('Starting bot...')
+    app = Application.builder().token(TOKEN).build()
+
+    #Commands
+    app.add_handler(CommandHandler('start', start_command))
+    app.add_handler(CommandHandler('hello', hello_command))
+    app.add_handler(CommandHandler('help', help_command))
+
+    #Messages
+    app.add_handler(MessageHandler(filters.TEXT, handle_message))
+
+    #Errors
+    app.add_error_handler(error)
+
+    #Polls the bot
+    print('polling...')
+    app.run_polling(poll_interval=3)
